@@ -1,0 +1,3 @@
+[submodule "submodules/simple-knn"]
+	path = submodules/simple-knn
+	url = https://github.com/TingtingLiao/dreamscene360.git
