@@ -7,7 +7,7 @@ An unofficial pytorch implementation of [**DreamScene360**](https://dreamscene36
   
 ## Install
 ```bash
-git clone https://github.com/TingtingLiao/dreamscene360.git 
+git clone  --recursive https://github.com/TingtingLiao/dreamscene360.git 
 cd dreamscene360
 conda create -n dreamscene360 python=3.10 
 conda activate dreamscene360 
@@ -24,19 +24,16 @@ pip install -U xformers --index-url https://download.pytorch.org/whl/cu121
 # diffusion360 
 pip install git+https://github.com/archerfmy/sd-t2i-360panoimage
 huggingface-cli download archerfmy0831/sd-t2i-360panoimage
-
-cd submodules
-git clone https://github.com/hbb1/diff-surfel-rasterization.git 
-pip install -e diff-surfel-rasterization
-
-git clone https://github.com/hbb1/diff-surfel-rasterization.git 
+ 
+pip install -e submodules/diff-surfel-rasterization 
 pip install -e submodules/simple-knn
  
 sudo apt-get install libgtest-dev libeigen3-dev libboost-all-dev libopencv-dev libatlas-base-dev
 sudo apt-get install liblapack-dev libsuitesparse-dev libcxsparse3 libgflags-dev libgoogle-glog-dev libgtest-dev
+conda install -c conda-forge libstdcxx-ng=12  
 
 # pybind11
-cd ./3dparty
+cd submodules/360monodepth/code/cpp/3dparty
 git clone https://github.com/pybind/pybind11.git 
 cd pybind11 && mkdir build && cd build
 cmake .. && make -j8 
@@ -48,17 +45,18 @@ git clone https://ceres-solver.googlesource.com/ceres-solver
 cd ceres-solver && mkdir build && cd build
 cmake .. && make -j8 
 sudo make install
-cd ../../  
+cd ../../../  
 
 # instaOmniDepth
+mkdir build && cd build
 cmake -DCMAKE_BUILD_TYPE=Release  ..
-make -j8
-cd ../python  
+make -j8 
+cd ../python
 python setup.py build
 python setup.py bdist_wheel 
 pip install dist/instaOmniDepth-0.1.0-cp310-cp310-linux_x86_64.whl # if failed, please check your file version in dist/ 
-conda install -c conda-forge libstdcxx-ng=12 
 ```
+
 ## Usage 
 ```bash 
 python main.py
