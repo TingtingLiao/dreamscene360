@@ -6,4 +6,4 @@
 	url = https://github.com/hbb1/diff-surfel-rasterization.git
 [submodule "submodules/360monodepth"]
 	path = submodules/360monodepth
-	url = https://github.com/manurare/360monodepth.git
+	url = https://github.com/TingtingLiao/360monodepth.git
