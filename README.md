@@ -59,5 +59,4 @@ Special thanks to the projects and their contributors:
 * [DreamScene360](https://dreamscene360.github.io/)
 * [Diffusion360](https://github.com/ArcherFMY/SD-T2I-360PanoImage)
 * [360monodepth](https://github.com/manurare/360monodepth)
- 
- 
+
