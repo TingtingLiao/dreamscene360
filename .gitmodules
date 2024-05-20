@@ -1,3 +1,6 @@
 [submodule "submodules/360monodepth"]
 	path = submodules/360monodepth
 	url = https://github.com/TingtingLiao/360monodepth.git
+[submodule "submodules/2d-gaussian-splatting"]
+	path = submodules/2d-gaussian-splatting
+	url = https://github.com/hbb1/2d-gaussian-splatting.git
