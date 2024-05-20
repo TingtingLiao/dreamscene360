@@ -2,7 +2,10 @@
 An unofficial pytorch implementation of [**DreamScene360**](https://dreamscene360.github.io/)
 : Unconstrained Text-to-3D Scene Generation with Panoramic Gaussian Splatting. 
 
-![a cozy living room_panorama_image](https://github.com/TingtingLiao/dreamscene360/assets/45743512/1be2908e-94e4-4d57-bb8a-92c7d437e62c) 
+<!-- ![a cozy living room_panorama_image](https://github.com/TingtingLiao/dreamscene360/assets/45743512/1be2908e-94e4-4d57-bb8a-92c7d437e62c)  -->
+
+![panorama_image](https://github.com/TingtingLiao/dreamscene360/assets/45743512/c0869131-ab1b-41dd-834d-7450d9c84554)
+![depth_blending_vis](https://github.com/TingtingLiao/dreamscene360/assets/45743512/0e725bc3-9021-4224-8266-7571deac5aac)
 
   
 ## Install
@@ -33,7 +36,7 @@ sudo apt-get install liblapack-dev libsuitesparse-dev libcxsparse3 libgflags-dev
 conda install -c conda-forge libstdcxx-ng=12  
 
 # pybind11
-cd submodules/360monodepth/code/cpp/3dparty
+cd submodules/360monodepth/code/cpp/3rd_party
 git clone https://github.com/pybind/pybind11.git 
 cd pybind11 && mkdir build && cd build
 cmake .. && make -j8 
@@ -44,7 +47,7 @@ cd ../../
 git clone https://ceres-solver.googlesource.com/ceres-solver
 cd ceres-solver && mkdir build && cd build
 cmake .. && make -j8 
-sudo make install
+sudo make install 
 cd ../../../  
 
 # instaOmniDepth
