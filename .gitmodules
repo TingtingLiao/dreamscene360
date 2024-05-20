@@ -4,3 +4,6 @@
 [submodule "submodules/2d-gaussian-splatting"]
 	path = submodules/2d-gaussian-splatting
 	url = https://github.com/hbb1/2d-gaussian-splatting.git
+[submodule "submodules/simple-knn"]
+	path = submodules/simple-knn
+	url = https://github.com/camenduru/simple-knn.git
