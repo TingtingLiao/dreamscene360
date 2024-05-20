@@ -1,9 +1,3 @@
-[submodule "submodules/simple-knn"]
-	path = submodules/simple-knn
-	url = https://github.com/camenduru/simple-knn.git
-[submodule "submodules/diff-surfel-rasterization"]
-	path = submodules/diff-surfel-rasterization
-	url = https://github.com/hbb1/diff-surfel-rasterization.git
 [submodule "submodules/360monodepth"]
 	path = submodules/360monodepth
-	url = https://github.com/TingtingLiao/360monodepth
+	url = https://github.com/TingtingLiao/360monodepth.git
