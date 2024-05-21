@@ -1,12 +1,11 @@
 ## Introduction
-An unofficial pytorch implementation of [**DreamScene360**](https://dreamscene360.github.io/)
-: Unconstrained Text-to-3D Scene Generation with Panoramic Gaussian Splatting. 
+An unofficial pytorch implementation of [**DreamScene360**](https://dreamscene360.github.io/):Unconstrained Text-to-3D Scene Generation with Panoramic Gaussian Splatting. 
+  
+![panorama_image](https://github.com/TingtingLiao/dreamscene360/assets/45743512/77cf447e-85ee-4320-831d-76865a1ee92e)
 
-<!-- ![a cozy living room_panorama_image](https://github.com/TingtingLiao/dreamscene360/assets/45743512/1be2908e-94e4-4d57-bb8a-92c7d437e62c)  -->
+![depth_blending_vis](https://github.com/TingtingLiao/dreamscene360/assets/45743512/9972dfe6-344a-4a05-8afb-445a670bf9ac) 
 
-![panorama_image](https://github.com/TingtingLiao/dreamscene360/assets/45743512/c0869131-ab1b-41dd-834d-7450d9c84554)
-![depth_blending_vis](https://github.com/TingtingLiao/dreamscene360/assets/45743512/0e725bc3-9021-4224-8266-7571deac5aac)
-
+[training_process.webm](https://github.com/TingtingLiao/dreamscene360/assets/45743512/ce82c9b6-0b8c-4f7d-80e1-f2531ff9796b)
   
 ## Install
 ```bash
