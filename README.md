@@ -89,3 +89,4 @@ Special thanks to the projects and their contributors:
 * [Diffusion360](https://github.com/ArcherFMY/SD-T2I-360PanoImage)
 * [360monodepth](https://github.com/manurare/360monodepth)
 * [2DGS](https://github.com/hbb1/2d-gaussian-splatting)
+* [Equirec2Perspec](https://github.com/fuenwang/Equirec2Perspec)
