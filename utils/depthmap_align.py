@@ -1,8 +1,8 @@
 import cv2
-from utils import subimage
-from utils import depthmap_utils
-from utils import serialization
-from utils import image_io
+from utility import subimage
+from utility import depthmap_utils
+from utility import serialization
+from utility import image_io
 
 from skimage.transform import pyramid_gaussian
 import numpy as np
@@ -40,14 +40,14 @@ class DepthmapAlign:
 
     """
 
-    def __init__(self, opt, output_dir, subimages_rgb):
+    def __init__(self, opt, output_dir, subimages_rgb, debug=False):
         # sub-image number
         self.depthmap_number = -1
         self.output_dir = output_dir  # output alignment coefficient
         self.depthmap_aligned = None
 
         # output debug information filepath exp
-        self.debug = False
+        self.debug = debug
         # if output path is None do not output the data to files
         self.subimage_pixelcorr_filepath_expression = None
         self.subimage_depthmap_aligning_filepath_expression = None  # save the normalized depth map for each resolution
@@ -298,7 +298,7 @@ class DepthmapAlign:
             if pixel_corr_list is None or subimage_cam_param_list is None:
                 _, subimage_cam_param_list, pixel_corr_list = \
                     subimage.erp_ico_proj(erp_rgb_image_data, padding_size, tangent_image_width, self.downsample_pixelcorr_ratio, self.opt)
-
+            
             # save intermedia data for debug output pixel corresponding relationship and warped source image
             if self.debug:
                 tangent_image_height = depthmap_pryamid[pyramid_layer_index][0].shape[0]
