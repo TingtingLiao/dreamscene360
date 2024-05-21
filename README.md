@@ -61,8 +61,12 @@ pip install dist/instaOmniDepth-0.1.0-cp310-cp310-linux_x86_64.whl # if failed, 
 
 ## Usage 
 ```bash 
-python main.py
+python main.py prompt="a cozy living room" 
+
+# with gui 
+python main.py prompt="a cozy living room" gui=True 
 ```
+  
 ## Acknowledgement 
 Special thanks to the projects and their contributors:
 * [DreamScene360](https://dreamscene360.github.io/)
