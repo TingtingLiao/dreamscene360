@@ -1,12 +1,13 @@
 ## Introduction
 An unofficial pytorch implementation of [**DreamScene360**](https://dreamscene360.github.io/):Unconstrained Text-to-3D Scene Generation with Panoramic Gaussian Splatting. 
-  
-![panorama_image](https://github.com/TingtingLiao/dreamscene360/assets/45743512/77cf447e-85ee-4320-831d-76865a1ee92e)
 
-![depth_blending_vis](https://github.com/TingtingLiao/dreamscene360/assets/45743512/9972dfe6-344a-4a05-8afb-445a670bf9ac) 
 
-[training_process.webm](https://github.com/TingtingLiao/dreamscene360/assets/45743512/ce82c9b6-0b8c-4f7d-80e1-f2531ff9796b)
-  
+![panorama_image](https://github.com/TingtingLiao/dreamscene360/assets/45743512/2352781b-2ef5-4d84-a65b-30046733d6d3)
+
+![depth_blending_vis](https://github.com/TingtingLiao/dreamscene360/assets/45743512/bbc8da33-48a3-4c4e-a1b8-97b3304e6ef0)
+
+[The Forbidden City.webm](https://github.com/TingtingLiao/dreamscene360/assets/45743512/bf515549-ff38-4091-aee1-9e6148225e33)
+
 ## Install
 ```bash
 git clone  --recursive https://github.com/TingtingLiao/dreamscene360.git 
@@ -76,7 +77,11 @@ https://github.com/TingtingLiao/dreamscene360/assets/45743512/0edce697-62e3-459e
  
 https://github.com/TingtingLiao/dreamscene360/assets/45743512/98d81fed-9436-4b54-a72b-0abf51235a26
 
+![panorama_image](https://github.com/TingtingLiao/dreamscene360/assets/45743512/77cf447e-85ee-4320-831d-76865a1ee92e)
 
+![depth_blending_vis](https://github.com/TingtingLiao/dreamscene360/assets/45743512/9972dfe6-344a-4a05-8afb-445a670bf9ac) 
+
+[training_process.webm](https://github.com/TingtingLiao/dreamscene360/assets/45743512/ce82c9b6-0b8c-4f7d-80e1-f2531ff9796b)
 
 ## Acknowledgement 
 Special thanks to the projects and their contributors:
