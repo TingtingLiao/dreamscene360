@@ -93,14 +93,15 @@ class GUI:
         # stage 3: depth alignment
         self.dispmap_aligned_list = [] 
         self.subimg_cam_list = [] 
-         
-        # override if provide a checkpoint
+        
         if self.opt.load is not None:
-            self.renderer.initialize(self.opt.load)            
+            try:
+                self.renderer.gaussians.load_ply(self.opt.load)
+            except:
+                self.renderer.initialize(self.opt.load)   
         else:
-            # initialize gaussians to a blob
-            self.renderer.initialize(num_pts=self.opt.num_pts)
-         
+            self.renderer.initialize(num_pts=self.opt.num_pts)       
+ 
         if self.gui:
             dpg.create_context()
             self.register_dpg()
@@ -213,21 +214,20 @@ class GUI:
         self.last_seed = seed
 
     
-    def prepare_train(self):
+    def prepare_train(self): 
+        # self.text_to_panorama_image()
+        # self.panorama_to_tangent_images()
+        # self.depth_estimation()
+        # self.depth_alignment()
+        # exit()
         self.step = 0 
+        self.Equirectangular = Equirectangular(f"{self.log_dir}/panorama_image.png")  
+        self.renderer.initialize(f"{self.log_dir}/pointcloud.ply")  
         # setup training
         self.renderer.gaussians.training_setup(self.opt)
         # do not do progressive sh-level
         self.renderer.gaussians.active_sh_degree = self.renderer.gaussians.max_sh_degree
- 
-        # self.text_to_panorama_image()
-        self.panorama_to_tangent_images()
-        self.depth_estimation()
-        self.depth_alignment()
-        exit()
-        # self.renderer.initialize(f"{self.log_dir}/pointcloud.ply")    
-        # self.Equirectangular = Equirectangular(f"{self.log_dir}/panorama_image.png")  
-    
+       
     def sample_from_equirectangular(self, image_height=512, image_width=512): 
         theta = random.randint(0, 360)
         phi = random.randint(self.opt.min_ver, self.opt.max_ver)  
@@ -460,10 +460,9 @@ class GUI:
             )  # buffer must be contiguous, else seg fault!
   
     @torch.no_grad()
-    def save_model(self, mode, texture_size=1024): 
+    def save_model(self): 
         path = os.path.join(self.log_dir, f'{self.opt.save_path}_gs.ply')
         self.renderer.gaussians.save_ply(path)
-
         print(f"[INFO] save model to {path}.")
 
     def register_dpg(self):
@@ -740,10 +739,9 @@ class GUI:
         os.makedirs(log_dir, exist_ok=True)
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')   
         
-        out_video = cv2.VideoWriter(f'{log_dir}/out.mp4', fourcc, num_cameras / 4, (render_res*3, render_res))
+        out_video = cv2.VideoWriter(f'{log_dir}/{self.prompt}.mp4', fourcc, num_cameras / 10, (render_res*3, render_res))
          
-        yaws = torch.linspace(0, 360, num_cameras) 
-        xaws = torch.linspace(-30, 30, num_cameras) 
+        yaws = torch.linspace(0, 360, num_cameras)  
 
         print(f"[INFO] rendering 360 video...")
         # for xaw in xaws:   
