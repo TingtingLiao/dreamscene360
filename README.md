@@ -66,7 +66,18 @@ python main.py prompt="a cozy living room"
 # with gui 
 python main.py prompt="a cozy living room" gui=True 
 ```
-  
+## Gallery  
+
+https://github.com/TingtingLiao/dreamscene360/assets/45743512/689c5abe-2628-4a36-8a9c-6d3249af6038
+
+https://github.com/TingtingLiao/dreamscene360/assets/45743512/4a4d6fd1-91c3-40d8-b24d-642e5288852c
+
+https://github.com/TingtingLiao/dreamscene360/assets/45743512/0edce697-62e3-459e-a414-3ccc1227cc41
+ 
+https://github.com/TingtingLiao/dreamscene360/assets/45743512/98d81fed-9436-4b54-a72b-0abf51235a26
+
+
+
 ## Acknowledgement 
 Special thanks to the projects and their contributors:
 * [DreamScene360](https://dreamscene360.github.io/)
