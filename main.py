@@ -1,4 +1,5 @@
 import os
+import sys 
 import cv2
 import time
 import tqdm
@@ -10,16 +11,23 @@ import torch.nn.functional as F
 import random  
 import imageio
 from PIL import Image
-
+from scipy.spatial.transform import Rotation as R 
+from utils.Equirec2Perspec import Equirectangular
 from txt2panoimg import Text2360PanoramaImagePipeline
-from utils.projection_icosahedron import erp2ico_image
-from utils.cam_utils import orbit_camera, OrbitCamera, fov2focal 
-# from utils.grid_put import mipmap_linear_grid_put_2d
-# from utils.mesh import Mesh, safe_normalize
-from utils.logger import Logger
+
+python_src_dir = os.path.dirname(os.path.abspath(__file__))
+print(f"Adding '{python_src_dir}' to sys.path") 
+sys.path.append(python_src_dir + "/submodules/360monodepth/code/python/src/") 
+
+from gs_renderer import Renderer, MiniCam 
+from utils import cam_utils
 from utils.loss_utils import l1_loss, ssim
-from utils import image_io, depthmap_align, depthmap_utils, serialization 
-from gs_renderer import Renderer, MiniCam
+from utils import depthmap_align 
+
+from utility import blending, image_io, depthmap_utils, serialization, pointcloud_utils
+from utility.logger import Logger
+from utility.projection_icosahedron import erp2ico_image
+ 
 
 log = Logger(__name__)
 log.logger.propagate = True 
@@ -31,8 +39,7 @@ class GUI:
         self.gui = opt.gui # enable gui
         self.W = opt.W
         self.H = opt.H
-        self.cam = OrbitCamera(opt.W, opt.H, r=opt.radius, fovy=opt.fovy)
-
+        
         self.mode = "image"
         self.seed = "random"
 
@@ -41,21 +48,22 @@ class GUI:
 
         # models
         self.device = torch.device("cuda") 
+        self.cam = cam_utils.OrbitCamera(opt.W, opt.H, r=0, fovy=opt.fovy)
+        self.auto_rotate = True
     
         # renderer
         self.renderer = Renderer(sh_degree=self.opt.sh_degree, white_background=self.opt.white_background)
         self.bg_color = self.renderer.bg_color
         
         self.gaussain_scale_factor = 1
+        self.fovy = self.opt.fovy 
 
         # input image
         self.input_img = None
         self.input_mask = None
         self.input_img_torch = None
-        self.input_mask_torch = None
-        self.overlay_input_img = False
-        self.overlay_input_img_ratio = 0.
-
+        self.input_mask_torch = None 
+         
         # input text
         self.prompt = "" if self.opt.prompt is None else self.opt.prompt
         self.negative_prompt = "" if self.opt.negative_prompt is None else self.opt.negative_prompt
@@ -65,7 +73,7 @@ class GUI:
         self.step = 0
         self.train_steps = 1  # steps per rendering loop
         
-        self.load_models() 
+        # self.load_models() 
         self.opt.save_path = f"{self.prompt}" # _{time.strftime('%Y%m%d_%H%M%S')
         self.log_dir = os.path.join(self.opt.outdir, self.opt.save_path)
         os.makedirs(self.log_dir, exist_ok=True)
@@ -103,21 +111,21 @@ class GUI:
             dpg.destroy_context()
   
     @torch.no_grad()
-    def text_to_panorama_image(self, prompt, save_path=None):   
+    def text_to_panorama_image(self):   
         # todo: load model before start 
-        input = {'prompt': prompt, 'upscale': False} 
+        input = {'prompt': self.prompt, 'upscale': False} 
         model_path ="~/.cache/huggingface/hub/models--archerfmy0831--sd-t2i-360panoimage/snapshots"
         model_path = os.path.expanduser(model_path)
         model_path = os.path.join(model_path, os.listdir(model_path)[0])
         txt2panoimg = Text2360PanoramaImagePipeline(model_path, torch_dtype=torch.float16)
         output = txt2panoimg(input) 
-        save_path = f"{self.log_dir}/panorama_image.png" if save_path is None else save_path
+        save_path = f"{self.log_dir}/panorama_image.png"  
         output.save(save_path)
  
     @torch.no_grad()
-    def panorama_to_tangent_images(self, panorama_image_path): 
+    def panorama_to_tangent_images(self): 
         # load panorama image 
-        self.erp_image = cv2.cvtColor(cv2.imread(panorama_image_path), cv2.COLOR_BGR2RGB)
+        self.erp_image = cv2.cvtColor(cv2.imread(f"{self.log_dir}/panorama_image.png"), cv2.COLOR_BGR2RGB)
         # projection to tangent images
         self.subimg_rgb_list, _, points_gnomocoord = erp2ico_image(
             self.erp_image, self.opt.tangent_img_width, 
@@ -126,11 +134,12 @@ class GUI:
             )
         self.subimg_gnomo_xy = points_gnomocoord[1]
         
-        image_io.subimage_save_ico(self.subimg_rgb_list, f"{self.log_dir}/subimages_vis.png")
-        os.makedirs(self.subimages_dir, exist_ok=True)
-        for index, img in enumerate(self.subimg_rgb_list):
-            Image.fromarray(img.astype(np.uint8)).save(f"{self.subimages_dir}/{index:03d}.png")
-        print("Output subimages to {}.".format(self.log_dir)) 
+        if self.opt.debug:
+            image_io.subimage_save_ico(self.subimg_rgb_list, f"{self.log_dir}/subimages_vis.png")
+            os.makedirs(self.subimages_dir, exist_ok=True)
+            for index, img in enumerate(self.subimg_rgb_list):
+                Image.fromarray(img.astype(np.uint8)).save(f"{self.subimages_dir}/{index:03d}.png")
+            print("Output subimages to {}.".format(self.log_dir)) 
  
     def depth_estimation(self): 
         # estimate disparity map
@@ -151,32 +160,43 @@ class GUI:
             depthmap_utils.depth_ico_visual_save(self.depthmap_persp_list, f"{self.depth_estimate_dir}/depthmap_persp.png") 
             depthmap_utils.depth_ico_visual_save(self.depthmap_erp_list, f"{self.depth_estimate_dir}/depthmap.png") 
             depthmap_utils.depth_ico_visual_save(self.dispmap_erp_list, f"{self.depth_estimate_dir}/dispmap.png")
-
+            for i in range(len(self.subimg_rgb_list)):
+                depthmap_utils.write_pfm(f"{self.depth_estimate_dir}/depthmap_{i:03d}.pfm", self.depthmap_erp_list[i], scale=1) 
+                depthmap_utils.write_pfm(f"{self.depth_estimate_dir}/depthmap_perspective{i:03d}.pfm", self.depthmap_persp_list[i], scale=1)
+ 
+ 
     def depth_alignment(self):
+        # from utils import depthmap_align
         os.makedirs(self.depth_align_dir, exist_ok=True) 
-        depthmap_aligner = depthmap_align.DepthmapAlign(self.opt, self.depth_align_dir, self.subimg_rgb_list)
+        depthmap_aligner = depthmap_align.DepthmapAlign(self.opt, self.depth_align_dir, self.subimg_rgb_list, debug=True)
              
         subimage_available_list = list(range(len(self.dispmap_erp_list)))
         self.dispmap_aligned_list, coeffs_scale, coeffs_offset, self.subimg_cam_list = \
             depthmap_aligner.align_multi_res(self.erp_image, self.dispmap_erp_list, self.opt.subimage_padding_size, subimage_available_list)
-        
-        # save depth  
-        for index in range(0, len(subimage_rgb_list)):
-            depth_filename = fnc.subimage_dispmap_erp_filename_expression.format(index)
-            depthmap_utils.write_pfm(depth_filename, subimage_dispmap_erp_list[index], scale=1)
-            depthmap_utils.depth_visual_save(subimage_dispmap_erp_list[index], depth_filename + ".jpg")
-
-        if self.opt.debug: 
-            # for idx in subimage_available_list: 
-            #     dispmap, _ = depthmap_utils.read_pfm(f"{self.depth_align_dir}/depthmapAlignPy_depth_{idx:03d}_aligned.pfm") 
-            #     depthmap_utils.depth_visual_save(dispmap, dispmap_vis_filepath)
- 
+         
+        if self.opt.debug:   
             serialization.subimage_alignment_params(f"{self.depth_align_dir}/disp_coeff.json", coeffs_scale, coeffs_offset, subimage_available_list)
             depthmap_utils.depth_ico_visual_save(coeffs_scale, f"{self.depth_align_dir}/scale.png", subimage_available_list)
             depthmap_utils.depth_ico_visual_save(coeffs_offset, f"{self.depth_align_dir}/offset.png", subimage_available_list)
             serialization.save_cam_params(f"{self.depth_align_dir}/camera_all.json",subimage_available_list, self.subimg_cam_list)
             depthmap_utils.depth_ico_visual_save(self.dispmap_aligned_list, f"{self.depth_align_dir}/dispmap_aligned.png")
+ 
+        blend_it = blending.BlendIt(opt.subimage_padding_size, len(subimage_available_list), self.opt.blending_method)
+        blend_it.fidelity_weight = 0.1
 
+        erp_image_height = self.erp_image.shape[0]
+        blend_it.tangent_images_coordinates(erp_image_height, self.dispmap_aligned_list[0].shape)
+        blend_it.erp_blendweights(self.subimg_cam_list, erp_image_height, self.dispmap_aligned_list[0].shape)
+        blend_it.compute_linear_system_matrices(erp_image_height, erp_image_height * 2, blend_it.frustum_blendweights)
+
+        erp_dispmap_blend = blend_it.blend(self.dispmap_aligned_list, erp_image_height)
+        blending_method = 'poisson' if self.opt.blending_method == 'all' else self.opt.blending_method
+        erp_dispmap_blend_save = erp_dispmap_blend[blending_method]  
+        pointcloud_utils.depthmap2pointcloud_erp(erp_dispmap_blend_save, self.erp_image, f"{self.log_dir}/pointcloud.ply")
+ 
+        depthmap_utils.write_pfm(f"{self.depth_align_dir}/depth_blending.pfm", erp_dispmap_blend_save.astype(np.float32), scale=1) 
+        depthmap_utils.depth_visual_save(erp_dispmap_blend_save, f"{self.log_dir}/depth_blending_vis.png")
+  
     def seed_everything(self):
         try:
             seed = int(self.seed)
@@ -192,74 +212,148 @@ class GUI:
 
         self.last_seed = seed
 
-    def load_models(self):
-         pass 
-        
+    
     def prepare_train(self):
         self.step = 0 
         # setup training
         self.renderer.gaussians.training_setup(self.opt)
         # do not do progressive sh-level
         self.renderer.gaussians.active_sh_degree = self.renderer.gaussians.max_sh_degree
-
-        panorama_image_path = f"{self.log_dir}/panorama_image.png" 
-        # self.text_to_panorama_image(self.prompt, panorama_image_path)
-        self.panorama_to_tangent_images(panorama_image_path)
+ 
+        # self.text_to_panorama_image()
+        self.panorama_to_tangent_images()
         self.depth_estimation()
         self.depth_alignment()
-
-        # run dream2dgs. figure out the camera pose and render the image
-
         exit()
+        # self.renderer.initialize(f"{self.log_dir}/pointcloud.ply")    
+        # self.Equirectangular = Equirectangular(f"{self.log_dir}/panorama_image.png")  
+    
+    def sample_from_equirectangular(self, image_height=512, image_width=512): 
+        theta = random.randint(0, 360)
+        phi = random.randint(self.opt.min_ver, self.opt.max_ver)  
+        img = self.Equirectangular.GetPerspective(self.fovy, -(theta+180), -phi, image_height, image_width) 
+        # cv2.imwrite("perspective_image.jpg", img)
+        img = torch.as_tensor(img[..., ::-1].copy(), dtype=torch.float32).permute(2, 0, 1) / 255.0
+        img = img.to(self.device)
+        rot = R.from_euler("zyx", [0, theta, phi], degrees=True).as_matrix() 
+        w2c = np.eye(4)
+        w2c[:3, :3] = rot
+        w2c = w2c.astype(np.float32) 
+        camera = MiniCam(
+                w2c,
+                image_height,
+                image_width,
+                np.deg2rad(self.fovy),
+                np.deg2rad(self.fovy),
+                0.1,
+                100,
+            )
+        
+        return img, camera 
+  
          
-    def get_known_view_loss(self): 
-        idx = random.randint(0, len(self.mv_images)-1)
-        cam, gt_image, gt_mask = self.mv_cameras[idx], self.mv_images[idx], self.mv_masks[idx] 
+        self.mv_images = [] 
+        self.mv_depths = []
+        self.mv_cameras = []  
+        pcls = [] 
+        rgbs = []  
+
+        camera_file = f"{self.depth_align_dir}/camera_all.json"
+        subimage_cam_list = serialization.load_cam_params(camera_file) 
+
+        for i, camera_params in enumerate(subimage_cam_list[:]):
+
+            image = cv2.imread(f"{self.subimages_dir}/{i:03d}.png")[..., ::-1] / 255 
+            depth, scale = depthmap_utils.read_pfm(f"{self.depth_align_dir}/depthmapAlignPy_depth_{i:03d}_aligned.pfm") 
+            
+            # depth *= 0.3
+            # camera
+            rotation = np.array(camera_params["rotation"])
+        
+            principal_point = camera_params["intrinsics"]["principal_point"]
+            focal_length_x  = camera_params["intrinsics"]["focal_length_x"]
+            focal_length_y = camera_params["intrinsics"]["focal_length_y"]
+            K = np.array(camera_params["intrinsics"]["matrix"])
+            rot_x = -camera_params['rot_x']
+            rot_y = -camera_params['rot_y']
  
+ 
+            # pose = cam_utils.orbit_camera(rot_x, rot_y, self.opt.radius, is_degree=False)
+            # pose = np.linalg.inv(pose) 
+            
+            x,y = np.meshgrid(np.arange(depth.shape[1]), np.arange(depth.shape[0])) 
+            rgb = image[y.reshape(-1), x.reshape(-1)]
+
+            # x = (x - principal_point[0]) / focal_length_x
+            # y = (y - principal_point[1]) / focal_length_x
+ 
+            xyz = np.stack([x, y, np.ones_like(x)], axis=-1).reshape(-1, 3)
+            xyz = xyz * depth.reshape(-1, 1)
+            xyz = xyz @ np.linalg.inv(K).T
+              
+            # x = (x + 0.5 - principal_point[0]) / focal_length_x
+            # y = (y + 0.5 - principal_point[1]) / focal_length_y   
+            # xyz = np.stack([x, y, depth], axis=-1).reshape(-1, 3)
+
+            xyz = xyz @ rotation.T 
+
+            pcls.append(xyz)
+            rgbs.append(rgb)
+            # exit()
+            # image = torch.from_numpy(image).permute(2, 0, 1).float().to(self.device) 
+            # self.mv_images.append(image)
+        
+        pcls = np.concatenate(pcls, axis=0)
+        rgbs = np.concatenate(rgbs, axis=0)
+        print(pcls.shape, rgbs.shape)
+        import open3d as o3d
+        point_cloud = o3d.geometry.PointCloud()
+        point_cloud.points = o3d.utility.Vector3dVector(pcls)
+        point_cloud.colors = o3d.utility.Vector3dVector(rgbs)
+
+        o3d.io.write_point_cloud("colored_point_cloud.ply", point_cloud)
+        exit(0)
+     
+    def get_known_view_loss(self):  
+        # sample image and camera from equirectangular
+        gt_image, cam = self.sample_from_equirectangular()
+
+        # render image
         gs_out = self.renderer.render(cam) 
-        image, alpha, rend_normal, surf_normal = gs_out["image"], gs_out["alpha"], gs_out["rend_normal"], gs_out["surf_normal"]
+        image, rend_normal, surf_normal = gs_out["image"], gs_out["rend_normal"], gs_out["surf_normal"]
         
         # image loss 
         loss = (1.0 - self.opt.lambda_dssim) * l1_loss(image, gt_image) + self.opt.lambda_dssim * (1.0 - ssim(image, gt_image))
-       
-        # mask loss  
-        loss  += self.opt.lambda_mask * (alpha * (1 - gt_mask)).mean()
- 
+        
         # distortion loss  
         if self.step > 3000:
             loss += self.opt.lambda_dist * gs_out["rend_dist"].mean()
-
-        # vis_image = torch.cat([image, gt_image, rend_normal, surf_normal], dim=2) .permute(1, 2, 0) * 0.5 + 0.5
-        # cv2.imwrite(f'{self.opt.outdir}/{self.opt.save_path}/rend_normal_{self.step}.png', (vis_image.detach().cpu().numpy()[..., ::-1] * 255).astype(np.uint8))
-        
+ 
         # normal loss   
-        if self.step > 7000:  
+        if self.step > 7000 and self.opt.lambda_normal > 0:  
             loss += self.opt.lambda_normal * (1 - (rend_normal * surf_normal).sum(dim=0)).mean()    
 
-            if self.opt.dpt:
-                gt_normal = self.mv_normals[idx]  
-                loss += self.opt.lambda_normal_dpt * (1 - (gs_out["rend_normal_world"] * gt_normal).sum(dim=0)).mean() 
-         
+        # save visualization
+        if self.opt.debug and self.step % 100 == 0:
+            vis_image = torch.cat([image, gt_image, rend_normal* 0.5 + 0.5, surf_normal* 0.5 + 0.5], dim=2).permute(1, 2, 0)  
+            os.makedirs(f'{self.log_dir}/vis/', exist_ok=True)
+            cv2.imwrite(f'{self.log_dir}/vis/step_{self.step}.png', (vis_image.detach().cpu().numpy()[..., ::-1] * 255).astype(np.uint8))
+ 
         return loss, gs_out
 
     def train_step(self):
         starter = torch.cuda.Event(enable_timing=True)
         ender = torch.cuda.Event(enable_timing=True)
         starter.record()
-
-        log_dir = os.path.join(self.opt.outdir, self.opt.save_path)  
-         
-        self.step += 1
-        step_ratio = min(1, self.step / self.opt.iters)
  
+        self.step += 1
+          
         self.renderer.gaussians.update_learning_rate(self.step)
 
         if self.step % 1000 == 0:
             self.renderer.gaussians.oneupSHdegree()
  
-        loss, gs_out = self.get_known_view_loss() 
-        
-        # optimize step
+        loss, gs_out = self.get_known_view_loss()  
         loss.backward()
         ender.record()
         
@@ -271,19 +365,19 @@ class GUI:
                 self.renderer.gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
 
                 if self.step >= self.opt.density_start_iter and self.step % self.opt.densification_interval == 0:
-                    size_threshold = 20 if self.step > opt.opacity_reset_interval else None
+                    # size_threshold = 20 if self.step > opt.opacity_reset_interval else None
                     self.renderer.gaussians.densify_and_prune(
                         self.opt.densify_grad_threshold, 
                         min_opacity=self.opt.densify_min_opacity, 
                         extent=self.opt.densify_extent,  
-                        max_screen_size=size_threshold, 
+                        max_screen_size=None, 
                         )
         
                 if self.step % self.opt.opacity_reset_interval == 0:
                     self.renderer.gaussians.reset_opacity()
             
             self.renderer.gaussians.optimizer.step()
-            self.renderer.gaussians.optimizer.zero_grad(set_to_none = True)
+            self.renderer.gaussians.optimizer.zero_grad(set_to_none=True)
        
         torch.cuda.synchronize()
         t = starter.elapsed_time(ender)
@@ -306,6 +400,9 @@ class GUI:
         starter = torch.cuda.Event(enable_timing=True)
         ender = torch.cuda.Event(enable_timing=True)
         starter.record()
+
+        if self.auto_rotate:
+            self.cam.orbit(10, 0)
 
         # should update image
         if self.need_update:
@@ -349,14 +446,7 @@ class GUI:
                 .cpu()
                 .numpy()
             )
-
-            # display input_image
-            if self.overlay_input_img and self.input_img is not None:
-                self.buffer_image = (
-                    self.buffer_image * (1 - self.overlay_input_img_ratio)
-                    + self.input_img * self.overlay_input_img_ratio
-                )
-
+  
             self.need_update = False
 
         ender.record()
@@ -370,147 +460,14 @@ class GUI:
             )  # buffer must be contiguous, else seg fault!
   
     @torch.no_grad()
-    def save_model(self, mode='geo', texture_size=1024):
-        os.makedirs(self.opt.outdir, exist_ok=True)
-        if mode == 'geo':
-            path = os.path.join(self.opt.outdir, self.opt.save_path, 'mesh.ply')
-            mesh = self.renderer.gaussians.extract_mesh(path, self.opt.density_thresh)
-            mesh.write_ply(path)
-
-        elif mode == 'geo+tex':
-            path = os.path.join(self.opt.outdir, self.opt.save_path + '_mesh.' + self.opt.mesh_format)
-            mesh = self.renderer.gaussians.extract_mesh(path, self.opt.density_thresh)
-
-            # perform texture extraction
-            print(f"[INFO] unwrap uv...")
-            h = w = texture_size
-            mesh.auto_uv()
-            mesh.auto_normal()
-
-            albedo = torch.zeros((h, w, 3), device=self.device, dtype=torch.float32)
-            cnt = torch.zeros((h, w, 1), device=self.device, dtype=torch.float32)
- 
-            vers = [0] * 8 + [-45] * 8 + [45] * 8 + [-89.9, 89.9]
-            hors = [0, 45, -45, 90, -90, 135, -135, 180] * 3 + [0, 0]
-
-            render_resolution = 512
-
-            import nvdiffrast.torch as dr
-
-            if not self.opt.force_cuda_rast and (not self.opt.gui or os.name == 'nt'):
-                glctx = dr.RasterizeGLContext()
-            else:
-                glctx = dr.RasterizeCudaContext()
-
-            for ver, hor in zip(vers, hors):
-                # render image
-                pose = orbit_camera(ver, hor, self.cam.radius)
-
-                cur_cam = MiniCam(
-                    pose,
-                    render_resolution,
-                    render_resolution,
-                    self.cam.fovy,
-                    self.cam.fovx,
-                    self.cam.near,
-                    self.cam.far,
-                )
-                
-                cur_out = self.renderer.render(cur_cam)
-
-                rgbs = cur_out["image"].unsqueeze(0) # [1, 3, H, W] in [0, 1]
-
-                # enhance texture quality with zero123 [not working well]
-                # if self.opt.guidance_model == 'zero123':
-                #     rgbs = self.guidance.refine(rgbs, [ver], [hor], [0])
-                    # import kiui
-                    # kiui.vis.plot_image(rgbs)
-                    
-                # get coordinate in texture image
-                pose = torch.from_numpy(pose.astype(np.float32)).to(self.device)
-                proj = torch.from_numpy(self.cam.perspective.astype(np.float32)).to(self.device)
-
-                v_cam = torch.matmul(F.pad(mesh.v, pad=(0, 1), mode='constant', value=1.0), torch.inverse(pose).T).float().unsqueeze(0)
-                v_clip = v_cam @ proj.T
-                rast, rast_db = dr.rasterize(glctx, v_clip, mesh.f, (render_resolution, render_resolution))
-
-                depth, _ = dr.interpolate(-v_cam[..., [2]], rast, mesh.f) # [1, H, W, 1]
-                depth = depth.squeeze(0) # [H, W, 1]
-
-                alpha = (rast[0, ..., 3:] > 0).float()
-
-                uvs, _ = dr.interpolate(mesh.vt.unsqueeze(0), rast, mesh.ft)  # [1, 512, 512, 2] in [0, 1]
-
-                # use normal to produce a back-project mask
-                normal, _ = dr.interpolate(mesh.vn.unsqueeze(0).contiguous(), rast, mesh.fn)
-                normal = safe_normalize(normal[0])
-
-                # rotated normal (where [0, 0, 1] always faces camera)
-                rot_normal = normal @ pose[:3, :3]
-                viewcos = rot_normal[..., [2]]
-
-                mask = (alpha > 0) & (viewcos > 0.5)  # [H, W, 1]
-                mask = mask.view(-1)
-
-                uvs = uvs.view(-1, 2).clamp(0, 1)[mask]
-                rgbs = rgbs.view(3, -1).permute(1, 0)[mask].contiguous()
-                
-                # update texture image
-                cur_albedo, cur_cnt = mipmap_linear_grid_put_2d(
-                    h, w,
-                    uvs[..., [1, 0]] * 2 - 1,
-                    rgbs,
-                    min_resolution=256,
-                    return_count=True,
-                )
-                
-                # albedo += cur_albedo
-                # cnt += cur_cnt
-                mask = cnt.squeeze(-1) < 0.1
-                albedo[mask] += cur_albedo[mask]
-                cnt[mask] += cur_cnt[mask]
-
-            mask = cnt.squeeze(-1) > 0
-            albedo[mask] = albedo[mask] / cnt[mask].repeat(1, 3)
-
-            mask = mask.view(h, w)
-
-            albedo = albedo.detach().cpu().numpy()
-            mask = mask.detach().cpu().numpy()
-
-            # dilate texture
-            from sklearn.neighbors import NearestNeighbors
-            from scipy.ndimage import binary_dilation, binary_erosion
-
-            inpaint_region = binary_dilation(mask, iterations=32)
-            inpaint_region[mask] = 0
-
-            search_region = mask.copy()
-            not_search_region = binary_erosion(search_region, iterations=3)
-            search_region[not_search_region] = 0
-
-            search_coords = np.stack(np.nonzero(search_region), axis=-1)
-            inpaint_coords = np.stack(np.nonzero(inpaint_region), axis=-1)
-
-            knn = NearestNeighbors(n_neighbors=1, algorithm="kd_tree").fit(
-                search_coords
-            )
-            _, indices = knn.kneighbors(inpaint_coords)
-
-            albedo[tuple(inpaint_coords.T)] = albedo[tuple(search_coords[indices[:, 0]].T)]
-
-            mesh.albedo = torch.from_numpy(albedo).to(self.device)
-            mesh.write(path)
-
-        else:
-            path = os.path.join(self.opt.outdir, self.opt.save_path, f'{self.opt.save_path}_gs.ply')
-            self.renderer.gaussians.save_ply(path)
+    def save_model(self, mode, texture_size=1024): 
+        path = os.path.join(self.log_dir, f'{self.opt.save_path}_gs.ply')
+        self.renderer.gaussians.save_ply(path)
 
         print(f"[INFO] save model to {path}.")
 
     def register_dpg(self):
         ### register texture
-
         with dpg.texture_registry(show=False):
             dpg.add_raw_texture(
                 self.W,
@@ -578,61 +535,7 @@ class GUI:
                     on_enter=True,
                     callback=callback_set_seed,
                 )
-
-                # input stuff
-                def callback_select_input(sender, app_data):
-                    # only one item
-                    for k, v in app_data["selections"].items():
-                        dpg.set_value("_log_input", k)
-                        # self.load_input(v) 
-                        self.prepare_multiview_images(v) 
-            
-                    self.need_update = True
-
-                with dpg.file_dialog(
-                    directory_selector=False,
-                    show=False,
-                    callback=callback_select_input,
-                    file_count=1,
-                    tag="file_dialog_tag",
-                    width=700,
-                    height=400,
-                ):
-                    dpg.add_file_extension("Images{.jpg,.jpeg,.png}")
-
-                with dpg.group(horizontal=True):
-                    dpg.add_button(
-                        label="input",
-                        callback=lambda: dpg.show_item("file_dialog_tag"),
-                    )
-                    dpg.add_text("", tag="_log_input")
-                
-                # overlay stuff
-                with dpg.group(horizontal=True):
-
-                    def callback_toggle_overlay_input_img(sender, app_data):
-                        self.overlay_input_img = not self.overlay_input_img
-                        self.need_update = True
-
-                    dpg.add_checkbox(
-                        label="overlay image",
-                        default_value=self.overlay_input_img,
-                        callback=callback_toggle_overlay_input_img,
-                    )
-
-                    def callback_set_overlay_input_img_ratio(sender, app_data):
-                        self.overlay_input_img_ratio = app_data
-                        self.need_update = True
-
-                    dpg.add_slider_float(
-                        label="ratio",
-                        min_value=0,
-                        max_value=1,
-                        format="%.1f",
-                        default_value=self.overlay_input_img_ratio,
-                        callback=callback_set_overlay_input_img_ratio,
-                    )
-
+ 
                 # prompt stuff            
                 dpg.add_input_text(
                     label="prompt",
@@ -640,20 +543,13 @@ class GUI:
                     callback=callback_setattr,
                     user_data="prompt",
                 )
-
-                dpg.add_input_text(
-                    label="negative",
-                    default_value=self.negative_prompt,
-                    callback=callback_setattr,
-                    user_data="negative_prompt",
-                )
-
+ 
                 # save current model
                 with dpg.group(horizontal=True):
                     dpg.add_text("Save: ")
 
                     def callback_save(sender, app_data, user_data):
-                        self.save_model(mode=user_data)
+                        self.save_model()
 
                     dpg.add_button(
                         label="model",
@@ -662,23 +558,7 @@ class GUI:
                         user_data='model',
                     )
                     dpg.bind_item_theme("_button_save_model", theme_button)
-
-                    dpg.add_button(
-                        label="geo",
-                        tag="_button_save_mesh",
-                        callback=callback_save,
-                        user_data='geo',
-                    )
-                    dpg.bind_item_theme("_button_save_mesh", theme_button)
-
-                    dpg.add_button(
-                        label="geo+tex",
-                        tag="_button_save_mesh_with_tex",
-                        callback=callback_save,
-                        user_data='geo+tex',
-                    )
-                    dpg.bind_item_theme("_button_save_mesh_with_tex", theme_button)
-
+ 
                     dpg.add_input_text(
                         label="",
                         default_value=self.opt.save_path,
@@ -706,6 +586,16 @@ class GUI:
                     )
                     dpg.bind_item_theme("_button_train", theme_button)
 
+                # auto rotate camera 
+                with dpg.group(horizontal=True):
+                    def callback_toggle_auto_rotate(sender, app_data):
+                            self.auto_rotate = not self.auto_rotate
+                            self.need_update = True
+                    dpg.add_checkbox(
+                        label="auto rotate",
+                        default_value=self.auto_rotate,
+                        callback=callback_toggle_auto_rotate,
+                    )
                 with dpg.group(horizontal=True):
                     dpg.add_text("", tag="_log_train_time")
                     dpg.add_text("", tag="_log_train_log")
@@ -726,7 +616,7 @@ class GUI:
 
                 # fov slider
                 def callback_set_fovy(sender, app_data):
-                    self.cam.fovy = np.deg2rad(app_data)
+                    self.fovy = np.deg2rad(app_data)
                     self.need_update = True
 
                 dpg.add_slider_int(
@@ -734,7 +624,7 @@ class GUI:
                     min_value=1,
                     max_value=120,
                     format="%d deg",
-                    default_value=np.rad2deg(self.cam.fovy),
+                    default_value=self.fovy,
                     callback=callback_set_fovy,
                 )
 
@@ -751,8 +641,7 @@ class GUI:
                     callback=callback_set_gaussain_scale,
                 )
 
-        ### register camera handler
-
+        ### register camera handler 
         def callback_camera_drag_rotate_or_draw_mask(sender, app_data):
             if not dpg.is_item_focused("_primary_window"):
                 return
@@ -801,7 +690,7 @@ class GUI:
             )
 
         dpg.create_viewport(
-            title="2DGS",
+            title="dreamscene360",
             width=self.W + 600,
             height=self.H + (45 if os.name == "nt" else 0),
             resizable=False,
@@ -854,17 +743,26 @@ class GUI:
         out_video = cv2.VideoWriter(f'{log_dir}/out.mp4', fourcc, num_cameras / 4, (render_res*3, render_res))
          
         yaws = torch.linspace(0, 360, num_cameras) 
+        xaws = torch.linspace(-30, 30, num_cameras) 
 
         print(f"[INFO] rendering 360 video...")
+        # for xaw in xaws:   
         for yaw in yaws:   
-            pose = orbit_camera(0, yaw, self.opt.radius)
+            rot = R.from_euler("zyx", [0, np.deg2rad(yaw), 0], degrees=False).as_matrix()  
+            # rot = R.from_euler("zyx", [0, 0, np.deg2rad(xaw)], degrees=False).as_matrix()  
+            w2c = np.eye(4)
+            w2c[:3, :3] = rot
+            w2c = w2c.astype(np.float32)
+             
+            # pose = cam_utils.orbit_camera(0, yaw, self.opt.radius)
+            # pose = np.linalg.inv(pose) 
             cur_cam = MiniCam(
-                pose, 
+                w2c, 
                 render_res, 
                 render_res, 
-                self.cam.fovy, 
-                self.cam.fovx, 
-                self.cam.near, self.cam.far
+                np.deg2rad(self.fovy), 
+                np.deg2rad(self.fovy),  
+                0.01, 100 
             )
             out = self.renderer.render(cur_cam)
 
@@ -894,12 +792,11 @@ class GUI:
         if iters > 0:
             self.prepare_train()
             for i in tqdm.trange(iters):
-                self.train_step()
-                # self.renderer.gaussians.prune(min_opacity=0.01, extent=1, max_screen_size=1)
+                self.train_step() 
             print(f"[INFO] training done!")
 
         self.render_360_video()
-        self.save_model(mode='model')
+        self.save_model()
           
 
 if __name__ == "__main__":

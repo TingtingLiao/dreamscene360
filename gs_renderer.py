@@ -24,9 +24,8 @@ def getProjectionMatrix(znear, zfar, fovX, fovY):
     P[2, 3] = -(zfar * znear) / (zfar - znear)
     return P
 
-
 class MiniCam:
-    def __init__(self, c2w, width, height, fovy, fovx, znear, zfar):
+    def __init__(self, w2c, width, height, fovy, fovx, znear, zfar):
         # c2w (pose) should be in NeRF convention.
 
         self.image_width = width
@@ -35,12 +34,6 @@ class MiniCam:
         self.FoVx = fovx
         self.znear = znear
         self.zfar = zfar
-
-        w2c = np.linalg.inv(c2w)
-
-        # rectify...
-        w2c[1:3, :3] *= -1
-        w2c[:3, 3] *= -1
 
         self.world_view_transform = torch.tensor(w2c).transpose(0, 1).cuda()
         self.projection_matrix = (
@@ -51,7 +44,8 @@ class MiniCam:
             .cuda()
         )
         self.full_proj_transform = self.world_view_transform @ self.projection_matrix
-        self.camera_center = -torch.tensor(c2w[:3, 3]).cuda()
+        # self.camera_center = -torch.tensor(c2w[:3, 3]).cuda()
+        self.camera_center = self.world_view_transform.inverse()[3, :3].cuda()
  
 class Renderer:
     def __init__(self, sh_degree=3, white_background=True):
@@ -86,12 +80,19 @@ class Renderer:
                 points=xyz, colors=SH2RGB(shs), normals=np.zeros((num_pts, 3))
             )
             self.gaussians.create_from_pcd(pcd, 10)
-        elif isinstance(input, BasicPointCloud):
-            # load from a provided pcd
-            self.gaussians.create_from_pcd(input, 1)
-        else:
-            # load from saved ply
-            self.gaussians.load_ply(input)
+        else: 
+            try:
+                # load from saved ply
+                self.gaussians.load_ply(input)
+            except: 
+                import open3d as o3d
+                point_cloud = o3d.io.read_point_cloud(input) 
+                pcd = BasicPointCloud(
+                    points=np.array(point_cloud.points), colors=point_cloud.colors, normals=np.zeros((num_pts, 3))
+                )
+                # load from a provided pcd
+                self.gaussians.create_from_pcd(pcd, 1)
+        
 
     def render(
         self, 
