@@ -215,11 +215,11 @@ class GUI:
 
     
     def prepare_train(self): 
-        # self.text_to_panorama_image()
-        # self.panorama_to_tangent_images()
-        # self.depth_estimation()
-        # self.depth_alignment()
-        # exit()
+        self.text_to_panorama_image()
+        self.panorama_to_tangent_images()
+        self.depth_estimation()
+        self.depth_alignment() 
+        
         self.step = 0 
         self.Equirectangular = Equirectangular(f"{self.log_dir}/panorama_image.png")  
         self.renderer.initialize(f"{self.log_dir}/pointcloud.ply")  
@@ -779,12 +779,7 @@ class GUI:
  
         out_video.release() 
         print(f"[INFO] 360 video saved to {log_dir}.")
-
-    @torch.no_grad()
-    def extract_mesh(self, density_thresh=0.1):
-        # todo sampling camera on sphere 
-        pass  
-
+  
     # no gui mode
     def train(self, iters=100):
         if iters > 0:
