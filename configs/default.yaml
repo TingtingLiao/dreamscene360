@@ -1,4 +1,4 @@
-debug: True 
+debug: False  
 ### Input
 # input rgba image path (default to None, can be load in GUI too)
 input: 
@@ -33,7 +33,7 @@ warmup_rgb_loss: False
 # training batch size per iter
 batch_size: 1
 # training iterations for stage 1
-iters: 10000
+iters: 3000
 # whether to linearly anneal timestep
 anneal_timestep: True
 # training iterations for stage 2
@@ -41,13 +41,13 @@ iters_refine: 50
 # training camera radius
 radius: 2
 # training camera fovy
-fovy: 49.1 # align with zero123 rendering setting (ref: https://github.com/cvlab-columbia/zero123/blob/main/objaverse-rendering/scripts/blender_script.py#L61
+fovy: 100 
 # training camera min elevation
 min_ver: -30
 # training camera max elevation
 max_ver: 30
 # checkpoint to load for stage 1 (should be a ply file)
-load:
+load: 
 # whether allow geom training in stage 2
 train_geo: False
 white_background: True 
@@ -77,7 +77,7 @@ percent_dense: 0.01
 density_start_iter: 500
 density_end_iter: 15000
 densification_interval: 100
-opacity_reset_interval: 3000
+opacity_reset_interval: 10000
 densify_grad_threshold: 0.0002
 densify_min_opacity: 0.05 
 densify_extent: 4
@@ -91,7 +91,7 @@ dataset_matterport_hexagon_mask_enable: False
 dataset_matterport_blurarea_shape: "circle"
 dataset_matterport_blur_area_height: 0 
 dispalign_corr_thread_number: 10 
-
+blending_method: 'poisson'  #['poisson', 'frustum', 'radial', 'nn', 'mean', 'all']
 
 ### Textured Mesh
 geom_lr: 0.0001
