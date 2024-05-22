@@ -115,7 +115,7 @@ class GUI:
   
     @torch.no_grad()
     def generate_panorama_image(self):   
-        if not os.path.exists(self.opt.input):   
+        if self.opt.input is None:   
             input = {'prompt': self.prompt, 'upscale': self.opt.upscale} 
             output = self.txt2panoimg(input) 
         else:
