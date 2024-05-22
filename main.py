@@ -11,9 +11,10 @@ import torch.nn.functional as F
 import random  
 import imageio
 from PIL import Image
-from scipy.spatial.transform import Rotation as R 
-from utils.Equirec2Perspec import Equirectangular
+from scipy.spatial.transform import Rotation as R  
 from txt2panoimg import Text2360PanoramaImagePipeline
+from img2panoimg import Image2360PanoramaImagePipeline 
+from diffusers.utils import load_image
 
 python_src_dir = os.path.dirname(os.path.abspath(__file__))
 print(f"Adding '{python_src_dir}' to sys.path") 
@@ -23,6 +24,7 @@ from gs_renderer import Renderer, MiniCam
 from utils import cam_utils
 from utils.loss_utils import l1_loss, ssim
 from utils import depthmap_align 
+from utils.Equirec2Perspec import Equirectangular
 
 from utility import blending, image_io, depthmap_utils, serialization, pointcloud_utils
 from utility.logger import Logger
@@ -57,16 +59,16 @@ class GUI:
         
         self.gaussain_scale_factor = 1
         self.fovy = self.opt.fovy 
-
-        # input image
-        self.input_img = None
-        self.input_mask = None
-        self.input_img_torch = None
-        self.input_mask_torch = None 
-         
+ 
         # input text
         self.prompt = "" if self.opt.prompt is None else self.opt.prompt
-        self.negative_prompt = "" if self.opt.negative_prompt is None else self.opt.negative_prompt
+
+        # load panorama image generation model 
+        model_path ="~/.cache/huggingface/hub/models--archerfmy0831--sd-t2i-360panoimage/snapshots"
+        model_path = os.path.expanduser(model_path)
+        model_path = os.path.join(model_path, os.listdir(model_path)[0])
+        self.txt2panoimg = Text2360PanoramaImagePipeline(model_path, torch_dtype=torch.float16)
+        self.img2panoimg = Image2360PanoramaImagePipeline(model_path, torch_dtype=torch.float16)
 
         # training stuff
         self.training = False 
@@ -112,21 +114,23 @@ class GUI:
             dpg.destroy_context()
   
     @torch.no_grad()
-    def text_to_panorama_image(self):   
-        # todo: load model before start 
-        input = {'prompt': self.prompt, 'upscale': False} 
-        model_path ="~/.cache/huggingface/hub/models--archerfmy0831--sd-t2i-360panoimage/snapshots"
-        model_path = os.path.expanduser(model_path)
-        model_path = os.path.join(model_path, os.listdir(model_path)[0])
-        txt2panoimg = Text2360PanoramaImagePipeline(model_path, torch_dtype=torch.float16)
-        output = txt2panoimg(input) 
-        save_path = f"{self.log_dir}/panorama_image.png"  
-        output.save(save_path)
- 
+    def generate_panorama_image(self):   
+        if not os.path.exists(self.opt.input):   
+            input = {'prompt': self.prompt, 'upscale': self.opt.upscale} 
+            output = self.txt2panoimg(input) 
+        else:
+            image = load_image(self.opt.input).resize((512, 512))
+            mask = load_image("./data/i2p-mask.jpg") 
+            input = {'prompt': self.prompt, 'upscale': self.opt.upscale, 'image':image, 'mask': mask} 
+            output = self.img2panoimg(input)  
+        output.save(f"{self.log_dir}/panorama_image.png")
+         
     @torch.no_grad()
     def panorama_to_tangent_images(self): 
         # load panorama image 
         self.erp_image = cv2.cvtColor(cv2.imread(f"{self.log_dir}/panorama_image.png"), cv2.COLOR_BGR2RGB)
+        self.erp_image = cv2.resize(self.erp_image, (self.opt.pano_width, self.opt.pano_height))
+
         # projection to tangent images
         self.subimg_rgb_list, _, points_gnomocoord = erp2ico_image(
             self.erp_image, self.opt.tangent_img_width, 
@@ -141,7 +145,8 @@ class GUI:
             for index, img in enumerate(self.subimg_rgb_list):
                 Image.fromarray(img.astype(np.uint8)).save(f"{self.subimages_dir}/{index:03d}.png")
             print("Output subimages to {}.".format(self.log_dir)) 
- 
+    
+    @torch.no_grad()
     def depth_estimation(self): 
         # estimate disparity map
         self.dispmap_persp_list = depthmap_utils.run_persp_monodepth(self.subimg_rgb_list, self.opt.persp_monodepth)
@@ -165,7 +170,7 @@ class GUI:
                 depthmap_utils.write_pfm(f"{self.depth_estimate_dir}/depthmap_{i:03d}.pfm", self.depthmap_erp_list[i], scale=1) 
                 depthmap_utils.write_pfm(f"{self.depth_estimate_dir}/depthmap_perspective{i:03d}.pfm", self.depthmap_persp_list[i], scale=1)
  
- 
+    @torch.no_grad()
     def depth_alignment(self):
         # from utils import depthmap_align
         os.makedirs(self.depth_align_dir, exist_ok=True) 
@@ -210,16 +215,14 @@ class GUI:
         torch.cuda.manual_seed(seed)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = True
-
         self.last_seed = seed
 
-    
     def prepare_train(self): 
-        self.text_to_panorama_image()
+        self.generate_panorama_image()
         self.panorama_to_tangent_images()
         self.depth_estimation()
         self.depth_alignment() 
-        
+        # exit()
         self.step = 0 
         self.Equirectangular = Equirectangular(f"{self.log_dir}/panorama_image.png")  
         self.renderer.initialize(f"{self.log_dir}/pointcloud.ply")  
@@ -248,71 +251,7 @@ class GUI:
                 0.1,
                 100,
             )
-        
         return img, camera 
-  
-         
-        self.mv_images = [] 
-        self.mv_depths = []
-        self.mv_cameras = []  
-        pcls = [] 
-        rgbs = []  
-
-        camera_file = f"{self.depth_align_dir}/camera_all.json"
-        subimage_cam_list = serialization.load_cam_params(camera_file) 
-
-        for i, camera_params in enumerate(subimage_cam_list[:]):
-
-            image = cv2.imread(f"{self.subimages_dir}/{i:03d}.png")[..., ::-1] / 255 
-            depth, scale = depthmap_utils.read_pfm(f"{self.depth_align_dir}/depthmapAlignPy_depth_{i:03d}_aligned.pfm") 
-            
-            # depth *= 0.3
-            # camera
-            rotation = np.array(camera_params["rotation"])
-        
-            principal_point = camera_params["intrinsics"]["principal_point"]
-            focal_length_x  = camera_params["intrinsics"]["focal_length_x"]
-            focal_length_y = camera_params["intrinsics"]["focal_length_y"]
-            K = np.array(camera_params["intrinsics"]["matrix"])
-            rot_x = -camera_params['rot_x']
-            rot_y = -camera_params['rot_y']
- 
- 
-            # pose = cam_utils.orbit_camera(rot_x, rot_y, self.opt.radius, is_degree=False)
-            # pose = np.linalg.inv(pose) 
-            
-            x,y = np.meshgrid(np.arange(depth.shape[1]), np.arange(depth.shape[0])) 
-            rgb = image[y.reshape(-1), x.reshape(-1)]
-
-            # x = (x - principal_point[0]) / focal_length_x
-            # y = (y - principal_point[1]) / focal_length_x
- 
-            xyz = np.stack([x, y, np.ones_like(x)], axis=-1).reshape(-1, 3)
-            xyz = xyz * depth.reshape(-1, 1)
-            xyz = xyz @ np.linalg.inv(K).T
-              
-            # x = (x + 0.5 - principal_point[0]) / focal_length_x
-            # y = (y + 0.5 - principal_point[1]) / focal_length_y   
-            # xyz = np.stack([x, y, depth], axis=-1).reshape(-1, 3)
-
-            xyz = xyz @ rotation.T 
-
-            pcls.append(xyz)
-            rgbs.append(rgb)
-            # exit()
-            # image = torch.from_numpy(image).permute(2, 0, 1).float().to(self.device) 
-            # self.mv_images.append(image)
-        
-        pcls = np.concatenate(pcls, axis=0)
-        rgbs = np.concatenate(rgbs, axis=0)
-        print(pcls.shape, rgbs.shape)
-        import open3d as o3d
-        point_cloud = o3d.geometry.PointCloud()
-        point_cloud.points = o3d.utility.Vector3dVector(pcls)
-        point_cloud.colors = o3d.utility.Vector3dVector(rgbs)
-
-        o3d.io.write_point_cloud("colored_point_cloud.ply", point_cloud)
-        exit(0)
      
     def get_known_view_loss(self):  
         # sample image and camera from equirectangular

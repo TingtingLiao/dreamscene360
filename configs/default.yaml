@@ -1,12 +1,16 @@
 debug: False  
+
 ### Input
 # input rgba image path (default to None, can be load in GUI too)
 input: 
 # input text prompt (default to None, can be input in GUI too)
 prompt: "a cozy living room"
-negative_prompt:
-# input mesh for stage 2 (auto-search from stage 1 output path if None)
-mesh: 
+# upscale panorama image size 
+upscale: False 
+# panorama image resolution for depth estimation
+pano_height: 1024
+pano_width: 2048
+
 # reference image resolution
 ref_size: 512
 # density thresh for mesh extraction
@@ -43,9 +47,9 @@ radius: 2
 # training camera fovy
 fovy: 100 
 # training camera min elevation
-min_ver: -30
+min_ver: -50
 # training camera max elevation
-max_ver: 30
+max_ver: 50
 # checkpoint to load for stage 1 (should be a ply file)
 load: 
 # whether allow geom training in stage 2
@@ -82,6 +86,9 @@ densify_grad_threshold: 0.0002
 densify_min_opacity: 0.05 
 densify_extent: 4
 densify_max_screen_size: 1 
+
+###  
+
 
 ### 
 subimage_padding_size: 0.3 

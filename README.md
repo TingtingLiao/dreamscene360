@@ -62,10 +62,16 @@ pip install dist/instaOmniDepth-0.1.0-cp310-cp310-linux_x86_64.whl # if failed, 
 
 ## Usage 
 ```bash 
-python main.py prompt="a cozy living room" 
+python main.py prompt="a cozy living room"  upscale=True 
+
+# (for <16GB gpu set upscale=False) 
+python main.py prompt="a cozy living room" upscale=False 
 
 # with gui 
 python main.py prompt="a cozy living room" gui=True 
+
+# image-to-scene 
+python main.py input=data/i2p-image.jpg prompt="an office room" upscale=True gui=True
 ```
 ## Gallery  
 
