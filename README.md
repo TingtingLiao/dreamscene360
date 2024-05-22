@@ -1,5 +1,5 @@
 ## Introduction
-An unofficial pytorch implementation of [**DreamScene360**](https://dreamscene360.github.io/):Unconstrained Text-to-3D Scene Generation with Panoramic Gaussian Splatting. 
+An unofficial implementation of [**DreamScene360**](https://dreamscene360.github.io/). Our project supports both text and image to scene generation.  
 
 
 ![panorama_image](https://github.com/TingtingLiao/dreamscene360/assets/45743512/2352781b-2ef5-4d84-a65b-30046733d6d3)
@@ -65,7 +65,7 @@ pip install dist/instaOmniDepth-0.1.0-cp310-cp310-linux_x86_64.whl # if failed, 
 # text-to-scene generation 
 python main.py prompt="a cozy living room"  upscale=True 
 
-# (for <16GB gpu set upscale=False) 
+# (for <16GB gpu, set upscale=False) 
 python main.py prompt="a cozy living room" upscale=False 
 
 # with gui 
@@ -75,6 +75,8 @@ python main.py prompt="a cozy living room" gui=True
 python main.py input=data/i2p-image.jpg prompt="an office room" upscale=True gui=True
 ```
 ## Gallery  
+
+https://github.com/TingtingLiao/dreamscene360/assets/45743512/a910ed06-1316-4782-884c-85ae93582153
 
 https://github.com/TingtingLiao/dreamscene360/assets/45743512/689c5abe-2628-4a36-8a9c-6d3249af6038
 
