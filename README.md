@@ -62,6 +62,7 @@ pip install dist/instaOmniDepth-0.1.0-cp310-cp310-linux_x86_64.whl # if failed, 
 
 ## Usage 
 ```bash 
+# text-to-scene generation 
 python main.py prompt="a cozy living room"  upscale=True 
 
 # (for <16GB gpu set upscale=False) 
