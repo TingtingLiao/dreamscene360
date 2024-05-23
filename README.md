@@ -1,6 +1,7 @@
 ## Introduction
 An unofficial implementation of [**DreamScene360**](https://dreamscene360.github.io/). Our project supports both text and image to scene generation.  
 
+https://github.com/TingtingLiao/dreamscene360/assets/45743512/c972d419-eb5d-4899-8a83-9f04c6c2d7bc
 
 ![panorama_image](https://github.com/TingtingLiao/dreamscene360/assets/45743512/2352781b-2ef5-4d84-a65b-30046733d6d3)
 
@@ -69,10 +70,10 @@ python main.py prompt="a cozy living room"  upscale=True
 python main.py prompt="a cozy living room" upscale=False 
 
 # with gui 
-python main.py prompt="a cozy living room" gui=True 
+python main.py prompt="a cozy living room" upscale=True gui=True 
 
 # image-to-scene 
-python main.py input=data/i2p-image.jpg prompt="an office room" upscale=True gui=True
+python main.py input=data/i2p-image.jpg prompt="an office room" upscale=True 
 ```
 ## Gallery  
 
